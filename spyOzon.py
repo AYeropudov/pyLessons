@@ -72,19 +72,6 @@ def parse_html(arts):
     conection.close()
 
 
-def progress(count, total, suffix=''):
-    bar_len = 60
-    filled_len = int(round(bar_len * count / float(total)))
-
-    percents = round(100.0 * count / float(total), 1)
-    bar = '=' * filled_len + '-' * (bar_len - filled_len)
-
-    print '{} {} ...{} {}\r'.format(bar, percents, '%', suffix)
-#soup = BeautifulSoup(text, "html.parser")
-#res = soup.find_all('div', {'class': 'eItemProperties_text'})
-#for e in res:
-#    print e.text
-#print(res)
-#parse_www(arts=arts_uniq)
+# parse_www(arts=arts_uniq)
 parse_html(arts=arts_uniq)
 
