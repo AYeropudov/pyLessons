@@ -7,8 +7,8 @@ from bs4 import BeautifulSoup
 import re
 from tqdm import tqdm
 from arts import arts
-from concurrent.futures import ThreadPoolExecutor, Future, TimeoutError
-import threading
+from concurrent import futures
+import collections
 
 # фУНКЦИЯ ЧТЕНИЯ ИЗ ФАЙЛОВ
 def read_file(filename):
@@ -23,7 +23,7 @@ def parse_www(uri):
     url = url_parse.format(art)
     r = http.request('GET', url)
     data = r.data.decode('cp1251').encode('utf8')
-    text_file = open(u"html/{}.html".format(art.encode('utf8')), "w")
+    text_file = open(u"/home/alex/spider/html/{}.html".format(art.encode('utf8')), "w")
     text_file.write(data)
     text_file.close()
     return
@@ -32,7 +32,7 @@ def parse_www(uri):
 # Парстинг HTML соохранение результатов
 def parse_html(uri):
     art = urllib.quote_plus(uri.encode('cp1251'))
-    text = read_file(u"html/{}.html".format(art))
+    text = read_file(u"/home/alex/spider/html/{}.html".format(art))
     soup = BeautifulSoup(text, "html.parser")
     results = soup.find_all('div', {'class': 'eItemProperties_text'})
     price_div = soup.find('div', {'class': 'bSaleColumn'})
@@ -47,86 +47,42 @@ def parse_html(uri):
         price_str = price_str + price.text
     re_w = re.compile(' ')
     price_str = re_w.sub('', price_str)
-    sql = "INSERT INTO html (art, value, price) VALUES (?, ?, ?)"
-    try:
-        cursor.execute(sql, (art, u"{}".format(description), price_str))
-        connection.commit()
-    except sqlite3.DatabaseError as err:
-        print u"Ошибка", err
-    else:
-        progressbar.set_description(u'Progress parsing ({}) :'.format(art))
-        progressbar.update()
+    sqls.append((art, u"{}".format(description), price_str))
 
 
 # очередь
-def task_queue(task, iterator, concurrency=10, on_fail=lambda _: None):
-    def submit():
-        try:
-            obj = next(iterator)
-        except StopIteration:
-            return
-        if result.cancelled():
-            return
-        stats['delayed'] += 1
-        future = executor.submit(task, obj)
-        future.obj = obj
-        future.add_done_callback(download_done)
-
-    def download_done(future):
-        with io_lock:
-            submit()
-            stats['delayed'] -= 1
-            stats['done'] += 1
-        if future.exception():
-            on_fail(future.exception(), future.obj)
-        if stats['delayed'] <= 0:
-            stats['finish'] = True
-            result.set_result(True)
-
-    def clean_up(_):
-        with io_lock:
-            executor.shutdown(wait=False)
-
-    io_lock = threading.RLock()
-    executor = ThreadPoolExecutor(concurrency)
-    result = Future()
-    result.stats = stats = {'done': 0, 'delayed': 0, 'finish': False}
-    result.add_done_callback(clean_up)
-
-    with io_lock:
-        for _ in range(concurrency):
-            submit()
-    return result
+def task_queue(task, iterator, pool):
+    counter = collections.Counter()
+    with pool as executor:
+        to_do_map = {}
+        for uri in sorted(iterator):
+            future = executor.submit(task, uri)
+            to_do_map[future] = uri
+        done_iter = futures.as_completed(to_do_map)
+        done_iter = tqdm(done_iter, total=len(iterator))
+        for future in done_iter:
+            counter['status'] += 1
+    return counter
 
 # шаблон URL
 url_parse = u"http://www.ozon.ru/?context=search&text={}"
 # соединение с БД
 connection = sqlite3.connect('db.sqlite')
 cursor = connection.cursor()
+sqls = []
 # Выборка уникальных значений из вводного массива
-arts_unique = list(set(arts[0:20]))
+arts_unique = list(set(arts))
 # Прогресс бар для индикации работы
-progressbar = tqdm(total=len(arts_unique), leave=True)
 # Пулл потоков
-
+#executor = futures.ThreadPoolExecutor(max_workers=len(arts_unique)/20)
 # Менеджер коннектов к сайту
 http = urllib3.PoolManager(10)
 
-results = task_queue(parse_www, iter(arts_unique))
-try:
-    while not results.stats['finish']:
-        try:
-            results.result(0.3)
-        except TimeoutError:
-            pass
-        if not results.stats['finish']:
-                progressbar.update(len(arts_unique) - (len(arts_unique) - results.stats['done']))
-        else:
-            progressbar.close()
-        # print '\rdone {done}, in work: {delayed}  '.format(**results.stats), sys.stdout.flush()
-except KeyboardInterrupt:
-    results.cancel()
+#results_www = task_queue(parse_www, arts_unique, executor)
+
+executor = futures.ThreadPoolExecutor(max_workers=len(arts_unique)/20)
+results_html = task_queue(parse_html, arts_unique, executor)
+cursor.executemany("INSERT INTO html (art, value, price) VALUES (?, ?, ?)", sqls)
 connection.commit()
-cursor.close()
 connection.close()
 
