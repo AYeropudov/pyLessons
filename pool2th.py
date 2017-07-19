@@ -20,7 +20,7 @@ def read_file(filename):
 
 # СКРАППИНГ СТРАНИЦ
 def parse_www(uri):
-    art = urllib.quote_plus(uri.encode('cp1251'))
+    art = urllib.quote_plus(uri[0].encode('cp1251'))
     url = url_parse.format(art)
     r = http.request('GET', url)
     data = r.data.decode('cp1251').encode('utf8')
@@ -74,14 +74,14 @@ sqls = []
 data_from_xls = xls_reader.get_arts_from_xls()
 
 # Выборка уникальных значений из вводного массива
-arts_unique = data_from_xls[0:20]
+arts_unique = data_from_xls
 # Прогресс бар для индикации работы
 # Пулл потоков
-#executor = futures.ThreadPoolExecutor(max_workers=len(arts_unique)/20)
+executor = futures.ThreadPoolExecutor(max_workers=len(arts_unique)/20)
 # Менеджер коннектов к сайту
 http = urllib3.PoolManager(10)
 
-#results_www = task_queue(parse_www, arts_unique, executor)
+results_www = task_queue(parse_www, arts_unique, executor)
 
 executor = futures.ThreadPoolExecutor(max_workers=len(arts_unique)/20)
 results_html = task_queue(parse_html, arts_unique, executor)
