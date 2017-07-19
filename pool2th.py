@@ -9,6 +9,7 @@ from tqdm import tqdm
 from arts import arts
 from concurrent import futures
 import collections
+import xls_reader
 
 # фУНКЦИЯ ЧТЕНИЯ ИЗ ФАЙЛОВ
 def read_file(filename):
@@ -31,7 +32,7 @@ def parse_www(uri):
 
 # Парстинг HTML соохранение результатов
 def parse_html(uri):
-    art = urllib.quote_plus(uri.encode('cp1251'))
+    art = urllib.quote_plus(uri[0].encode('cp1251'))
     text = read_file(u"/home/alex/spider/html/{}.html".format(art))
     soup = BeautifulSoup(text, "html.parser")
     results = soup.find_all('div', {'class': 'eItemProperties_text'})
@@ -47,7 +48,7 @@ def parse_html(uri):
         price_str = price_str + price.text
     re_w = re.compile(' ')
     price_str = re_w.sub('', price_str)
-    sqls.append((art, u"{}".format(description), price_str))
+    sqls.append((uri[1], u"{}".format(description), price_str))
 
 
 # очередь
@@ -70,8 +71,10 @@ url_parse = u"http://www.ozon.ru/?context=search&text={}"
 connection = sqlite3.connect('db.sqlite')
 cursor = connection.cursor()
 sqls = []
+data_from_xls = xls_reader.get_arts_from_xls()
+
 # Выборка уникальных значений из вводного массива
-arts_unique = list(set(arts))
+arts_unique = data_from_xls[0:20]
 # Прогресс бар для индикации работы
 # Пулл потоков
 #executor = futures.ThreadPoolExecutor(max_workers=len(arts_unique)/20)
@@ -82,7 +85,8 @@ http = urllib3.PoolManager(10)
 
 executor = futures.ThreadPoolExecutor(max_workers=len(arts_unique)/20)
 results_html = task_queue(parse_html, arts_unique, executor)
-cursor.executemany("INSERT INTO html (art, value, price) VALUES (?, ?, ?)", sqls)
-connection.commit()
-connection.close()
+xls_reader.put_stat_toxls(sqls)
+#cursor.executemany("INSERT INTO html (art, value, price) VALUES (?, ?, ?)", sqls)
+#connection.commit()
+#connection.close()
 
